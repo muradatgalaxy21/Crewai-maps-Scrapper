@@ -1,0 +1,48 @@
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Project specific
+logs/
+csv/
+screenshots/
+
+# Colab/Claude specific
+.claude/
+.colab_temp/
+*.ipynb_checkpoints
+
+# Generated files
+crewai-scraper-colab.zip
+prepare_for_colab.py.log
+
+# OS
+Thumbs.db
+.DS_Store
+*.log
