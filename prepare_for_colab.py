@@ -2,113 +2,95 @@
 """
 Prepare Crewai-maps-Scrapper project for Google Colab upload.
 
-This script:
-1. Creates a clean copy of your project
-2. Removes unnecessary files (venv, __pycache__, logs, etc.)
-3. Creates a ZIP file ready to upload to Colab
-4. Verifies all necessary files are included
+Run this script to create a clean ZIP file ready to upload to Colab:
+    python prepare_for_colab.py
+
+Output: crewai-scraper-colab.zip
 """
 
 import os
+import sys
 import shutil
 import zipfile
 from pathlib import Path
-from typing import List, Set
+
+SKIP_DIRS = {
+    "__pycache__",
+    ".git",
+    "venv",
+    ".venv",
+    "env",
+    ".eggs",
+    ".pytest_cache",
+    "node_modules",
+    ".colab_temp",
+    ".claude",
+    ".vscode",
+    ".idea",
+}
+
+SKIP_EXTENSIONS = {".pyc", ".pyo", ".log", ".err"}
+
+SKIP_FILES = {".gitignore", ".DS_Store", "Thumbs.db", "prepare_for_colab.py"}
+
+FILES_TO_INCLUDE = [
+    "src",
+    "requirements.txt",
+    "README.md",
+    "COLAB_GUIDE.md",
+    "colab_setup.ipynb",
+]
 
 
-def get_project_root() -> Path:
-    """Get the project root directory."""
-    return Path(__file__).parent
+def should_skip_dir(name: str) -> bool:
+    return name in SKIP_DIRS or name.endswith(".egg-info")
 
 
-def should_skip(path: Path, skip_patterns: Set[str]) -> bool:
-    """Check if path matches skip patterns."""
-    for pattern in skip_patterns:
-        if pattern in path.parts:
-            return True
-        if path.name == pattern:
-            return True
-    return False
+def should_skip_file(path: Path) -> bool:
+    return path.name in SKIP_FILES or path.suffix in SKIP_EXTENSIONS
+
+
+def copy_filtered(src: Path, dst: Path) -> None:
+    """Recursively copy a directory, skipping unwanted files."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        if item.is_dir():
+            if not should_skip_dir(item.name):
+                copy_filtered(item, dst / item.name)
+        elif item.is_file():
+            if not should_skip_file(item):
+                shutil.copy2(item, dst / item.name)
 
 
 def prepare_for_colab(output_zip: str = "crewai-scraper-colab.zip") -> None:
-    """Prepare project for Colab and create ZIP file."""
-
-    project_root = get_project_root()
+    project_root = Path(__file__).parent
     temp_dir = project_root / ".colab_temp"
     output_path = project_root / output_zip
 
-    # Clean up if temp dir exists
+    # Clean up temp dir from any previous run
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
+    temp_dir.mkdir()
 
-    # Create temp directory
-    temp_dir.mkdir(exist_ok=True)
-    colab_dir = temp_dir / "scraper"
-    colab_dir.mkdir(exist_ok=True)
+    print("Preparing project for Colab...\n")
 
-    print("📦 Preparing your project for Colab...\n")
-
-    # Patterns to skip
-    skip_patterns = {
-        "__pycache__",
-        ".git",
-        ".gitignore",
-        "venv",
-        ".venv",
-        "env",
-        ".eggs",
-        "*.egg-info",
-        ".pytest_cache",
-        "node_modules",
-        ".colab_temp",
-        ".claude",
-        ".vscode",
-        "*.pyc",
-    }
-
-    # Files to copy
-    files_to_copy = [
-        "src",
-        "requirements.txt",
-        ".env",
-        "README.md",
-        "COLAB_GUIDE.md",
-        "colab_setup.ipynb",
-    ]
-
-    # Copy files
-    for item in files_to_copy:
+    # Copy selected files/folders into temp_dir (flat — no extra 'scraper/' wrapper)
+    for item in FILES_TO_INCLUDE:
         src = project_root / item
-
         if not src.exists():
+            print(f"  SKIP (not found): {item}")
             continue
 
-        dst = colab_dir / item
-
+        dst = temp_dir / item
         if src.is_file():
             shutil.copy2(src, dst)
-            print(f"✓ Copied: {item}")
+            print(f"  OK  {item}")
         elif src.is_dir():
-            if item == "src":
-                # Copy src with filtering
-                shutil.copytree(
-                    src,
-                    dst,
-                    ignore=shutil.ignore_patterns(*skip_patterns),
-                    dirs_exist_ok=True
-                )
-            else:
-                shutil.copytree(
-                    src,
-                    dst,
-                    ignore=shutil.ignore_patterns(*skip_patterns),
-                )
-            print(f"✓ Copied: {item}/")
+            copy_filtered(src, dst)
+            print(f"  OK  {item}/")
 
-    # Verify structure
-    print("\n📋 Verifying structure...")
-    required_files = [
+    # Verify required files are present
+    required = [
         "src/__init__.py",
         "src/main.py",
         "src/config.py",
@@ -120,79 +102,64 @@ def prepare_for_colab(output_zip: str = "crewai-scraper-colab.zip") -> None:
         "requirements.txt",
     ]
 
+    print("\nVerifying structure...")
     missing = []
-    for req_file in required_files:
-        path = colab_dir / req_file
-        if path.exists():
-            print(f"✓ {req_file}")
+    for f in required:
+        p = temp_dir / f
+        if p.exists():
+            print(f"  FOUND  {f}")
         else:
-            print(f"✗ {req_file}")
-            missing.append(req_file)
+            print(f"  MISSING {f}")
+            missing.append(f)
 
     if missing:
-        print(f"\n⚠️  Missing files: {missing}")
-        print("These files are needed for the scraper to work.")
+        print(f"\nWARNING: {len(missing)} file(s) missing from output.")
     else:
-        print("\n✓ All required files present!")
+        print("\nAll required files present.")
 
-    # Create ZIP file
-    print(f"\n📦 Creating ZIP file: {output_zip}")
-
+    # Create ZIP — files sit at root level (src/, requirements.txt, etc.)
     if output_path.exists():
         output_path.unlink()
 
+    print(f"\nCreating {output_zip}...")
     with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(colab_dir):
-            # Filter directories
-            dirs[:] = [d for d in dirs if not should_skip(Path(root) / d, skip_patterns)]
+        for root, dirs, files in os.walk(temp_dir):
+            root_path = Path(root)
 
-            for file in files:
-                file_path = Path(root) / file
-                if should_skip(file_path, skip_patterns):
+            # Prune unwanted dirs in-place
+            dirs[:] = [d for d in dirs if not should_skip_dir(d)]
+
+            for filename in files:
+                file_path = root_path / filename
+                if should_skip_file(file_path):
                     continue
+                # arcname is relative to temp_dir so ZIP contains src/main.py etc.
                 arcname = file_path.relative_to(temp_dir)
                 zf.write(file_path, arcname)
 
-    zip_size = output_path.stat().st_size / (1024 * 1024)  # MB
-    print(f"✓ ZIP created: {output_zip} ({zip_size:.2f} MB)")
+    zip_size_kb = output_path.stat().st_size / 1024
+    print(f"Done! {output_zip} ({zip_size_kb:.1f} KB)\n")
 
-    # Print instructions
-    print(f"\n🎉 Ready for Colab!")
-    print(f"\nSteps to use in Google Colab:")
-    print(f"1. Download '{output_zip}' file")
-    print(f"2. Go to colab.research.google.com")
-    print(f"3. Click File → Upload notebook")
-    print(f"4. Select 'colab_setup.ipynb' from the ZIP")
-    print(f"5. Run the notebook cells in order")
-    print(f"6. When prompted, upload the entire ZIP file")
-    print(f"\nOr extract the ZIP and upload files individually.")
-
-    # Cleanup
-    print(f"\n🧹 Cleaning up temporary files...")
-    shutil.rmtree(temp_dir)
-    print(f"✓ Done!\n")
-
-    # Show file structure
-    print(f"📂 File structure in ZIP:")
+    # Show contents
+    print("Contents of ZIP:")
     with zipfile.ZipFile(output_path, "r") as zf:
-        file_list = sorted(zf.namelist())
-        for file in file_list[:20]:  # Show first 20
-            indent = "  " * file.count("/")
-            print(f"{indent}├ {Path(file).name}")
-        if len(file_list) > 20:
-            print(f"  ... and {len(file_list) - 20} more files")
+        for name in sorted(zf.namelist()):
+            print(f"  {name}")
 
-    return output_path
+    # Cleanup temp dir
+    shutil.rmtree(temp_dir)
+
+    print(f"\nShare these two files with anyone who wants to run the scraper:")
+    print(f"  1. {output_zip}")
+    print(f"  2. colab_setup.ipynb")
 
 
 if __name__ == "__main__":
-    import sys
-
-    output = sys.argv[1] if len(sys.argv) > 1 else "crewai-scraper-colab.zip"
+    out = sys.argv[1] if len(sys.argv) > 1 else "crewai-scraper-colab.zip"
     try:
-        prepare_for_colab(output)
+        prepare_for_colab(out)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
