@@ -39,7 +39,6 @@ screenshots/
 *.ipynb_checkpoints
 
 # Generated files
-crewai-scraper-colab.zip
 prepare_for_colab.py.log
 
 # OS
